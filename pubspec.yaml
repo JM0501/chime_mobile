@@ -1,0 +1,38 @@
+name: chime_mobile
+description: "A mobile chat app"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.1.0        # For backend API requests
+  provider: ^6.0.5    # State management
+  shared_preferences: ^2.2.2  # For storing JWT locally 
+  encrypt: ^5.0.1
+  crypto: ^3.0.3
+  cupertino_icons: ^1.0.8
+  intl: ^0.20.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
+
+# flutter_launcher_icons config MUST be at root level (not under dev_dependencies)
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/chime_logo.png"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/images/chime_logo.png"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/chime_logo.png
