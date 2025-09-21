@@ -5,7 +5,7 @@ import 'dart:convert';
 import '../userModel.dart';
 
 class SelectUserPage extends StatefulWidget {
-  final int currentUserId;
+  final String currentUserId; // ✅ now a String
   const SelectUserPage({super.key, required this.currentUserId});
 
   @override
@@ -18,6 +18,7 @@ class _SelectUserPageState extends State<SelectUserPage> {
   bool loading = true;
   final TextEditingController _searchController = TextEditingController();
   final String baseUrl = 'https://chime-api.onrender.com';
+  //final String baseUrl = 'http://192.168.1.177:5000';
 
   @override
   void initState() {
@@ -42,11 +43,12 @@ class _SelectUserPageState extends State<SelectUserPage> {
         setState(() {
           users = data
               .map((e) => UserModel.fromJson(e))
-              .where((u) => u.id != widget.currentUserId)
+              .where((u) => u.id != widget.currentUserId) // String comparison
               .toList();
           filteredUsers = List.from(users);
           loading = false;
         });
+        print("Fetched ${users.length} users");
       } else {
         throw Exception("Failed to load users");
       }
@@ -130,8 +132,8 @@ class _SelectUserPageState extends State<SelectUserPage> {
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) => ChatDetailPage(
-                                    currentUserId: widget.currentUserId,
-                                    otherUserId: user.id,
+                                    currentUserId: widget.currentUserId, // ✅ String
+                                    otherUserId: user.id, // ✅ String
                                     otherUsername: user.username,
                                   ),
                                 ),

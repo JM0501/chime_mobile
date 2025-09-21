@@ -26,8 +26,8 @@ class EncryptionHelper {
 }
 
 class ChatDetailPage extends StatefulWidget {
-  final int currentUserId;
-  final int otherUserId;
+  final String currentUserId;
+  final String otherUserId;
   final String otherUsername;
 
   const ChatDetailPage({
@@ -48,6 +48,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final String baseUrl = 'https://chime-api.onrender.com';
+  //final String baseUrl = 'http://192.168.1.177:5000';
 
   @override
   void initState() {
@@ -73,12 +74,14 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
       if (res.statusCode == 200) {
         final List data = json.decode(res.body);
+        print("Raw data $data");
         setState(() {
           messages = data.map((e) {
             final msg = Map<String, dynamic>.from(e);
-            msg['Content'] = safeDecrypt(msg['Content']);
+            msg['content'] = safeDecrypt(msg['content']);
             return msg;
           }).toList();
+          print("Fetched ${messages.length} messages");
         });
 
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
@@ -113,14 +116,14 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         final Map<String, dynamic> newMsg =
             Map<String, dynamic>.from(json.decode(res.body));
 
-        // ✅ Force SenderId to current user for instant alignment
+        //Force SenderId to current user for instant alignment
         setState(() {
           messages.add({
             ...newMsg,
-            'SenderId': widget.currentUserId,
-            'ReceiverId': widget.otherUserId,
-            'Content': text, // show plaintext instantly
-            'TimeStamp': DateTime.now().toIso8601String(),
+            'senderId': widget.currentUserId,
+            'receiverId': widget.otherUserId,
+            'content': text,
+            'timestamp': DateTime.now().toIso8601String(),
           });
           _controller.clear();
         });
@@ -197,10 +200,10 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                         itemCount: messages.length,
                         itemBuilder: (context, index) {
                           final msg = messages[index];
-                          final isMe = msg['SenderId'] == widget.currentUserId;
+                          final isMe = msg['senderId'] == widget.currentUserId;
 
-                          final content = msg['Content'] ?? '';
-                          final time = formatTime(msg['TimeStamp'] ?? '');
+                          final content = msg['content'] ?? '';
+                          final time = formatTime(msg['timestamp'] ?? '');
 
                           return Align(
                             alignment:

@@ -6,10 +6,11 @@ import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:encrypt/encrypt.dart' as encrypt;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class EncryptionHelper {
   static final key = encrypt.Key.fromUtf8('1234567890123456'); // 16 chars
-  static final iv = encrypt.IV.fromUtf8('1234567890123456');   // 16 chars
+  static final iv = encrypt.IV.fromUtf8('1234567890123456'); // 16 chars
 
   static String encryptText(String plainText) {
     final encrypter = encrypt.Encrypter(encrypt.AES(key));
@@ -28,7 +29,7 @@ class EncryptionHelper {
 }
 
 class ChatPage extends StatefulWidget {
-  final int currentUserId;
+  final String currentUserId;
   const ChatPage({super.key, required this.currentUserId});
 
   @override
@@ -41,6 +42,7 @@ class _ChatPageState extends State<ChatPage> {
   bool loading = true;
   final TextEditingController _searchController = TextEditingController();
   final String baseUrl = 'https://chime-api.onrender.com';
+  //final String baseUrl = 'http://192.168.1.177:5000';
 
   @override
   void initState() {
@@ -64,10 +66,11 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> fetchChats() async {
+    print("Navigating to ChatPage with userId: $widget.currentUserId");
     setState(() => loading = true);
     try {
       final url = Uri.parse(
-        "$baseUrl/api/users/chats?userId=${widget.currentUserId}",
+        "$baseUrl/api/users/messages?userId=${widget.currentUserId}",
       );
       final response = await http.get(url);
 
@@ -77,8 +80,9 @@ class _ChatPageState extends State<ChatPage> {
           chats = data.map((e) {
             final chat = e as Map<String, dynamic>;
             // 🔓 Decrypt last message
-            chat['LastMessage'] =
-                chat['LastMessage'] != null ? safeDecrypt(chat['LastMessage']) : '';
+            chat['LastMessage'] = chat['LastMessage'] != null
+                ? safeDecrypt(chat['LastMessage'])
+                : '';
             return chat;
           }).toList();
           filteredChats = List.from(chats);
@@ -97,10 +101,12 @@ class _ChatPageState extends State<ChatPage> {
     final query = _searchController.text.toLowerCase();
     setState(() {
       filteredChats = chats
-          .where((c) => (c['Username'] ?? "Unknown")
-              .toString()
-              .toLowerCase()
-              .contains(query))
+          .where(
+            (c) => (c['Username'] ?? "Unknown")
+                .toString()
+                .toLowerCase()
+                .contains(query),
+          )
           .toList();
     });
   }
@@ -110,7 +116,11 @@ class _ChatPageState extends State<ChatPage> {
     return DateFormat('hh:mm a').format(dateTime);
   }
 
-  void _logout() {
+  void _logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('userId');
+    await prefs.remove('username');
+    await prefs.remove('token'); // optional
     Navigator.pushReplacementNamed(context, '/login');
   }
 
@@ -158,107 +168,104 @@ class _ChatPageState extends State<ChatPage> {
               child: loading
                   ? const Center(child: CircularProgressIndicator())
                   : filteredChats.isEmpty
-                      ? Center(
-                          child: Text(
-                            "No chats found",
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 8,
-                            horizontal: 12,
-                          ),
-                          itemCount: filteredChats.length,
-                          itemBuilder: (context, index) {
-                            final chat = filteredChats[index];
-                            return GestureDetector(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ChatDetailPage(
-                                      currentUserId: widget.currentUserId,
-                                      otherUserId: chat['Id'],
-                                      otherUsername:
-                                          chat['Username'] ?? "Unknown",
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: Container(
-                                margin:
-                                    const EdgeInsets.symmetric(vertical: 6),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.05),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 26,
-                                      backgroundColor: Colors.blue[100],
-                                      child: const Icon(
-                                        Icons.person,
-                                        size: 28,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            chat['Username'] ?? "Unknown",
-                                            style: const TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            chat['LastMessage'] ?? "",
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.grey[600],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      chat['LastMessageTime'] != null
-                                          ? formatTimestamp(
-                                              chat['LastMessageTime'])
-                                          : "",
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey[500],
-                                      ),
-                                    ),
-                                  ],
+                  ? Center(
+                      child: Text(
+                        "No chats found",
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 8,
+                        horizontal: 12,
+                      ),
+                      itemCount: filteredChats.length,
+                      itemBuilder: (context, index) {
+                        final chat = filteredChats[index];
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ChatDetailPage(
+                                  currentUserId: widget.currentUserId,
+                                  otherUserId: chat['Id'],
+                                  otherUsername: chat['Username'] ?? "Unknown",
                                 ),
                               ),
                             );
                           },
-                        ),
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(vertical: 6),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 26,
+                                  backgroundColor: Colors.blue[100],
+                                  child: const Icon(
+                                    Icons.person,
+                                    size: 28,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        chat['Username'] ?? "Unknown",
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        chat['LastMessage'] ?? "",
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  chat['LastMessageTime'] != null
+                                      ? formatTimestamp(chat['LastMessageTime'])
+                                      : "",
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
             ),
           ),
         ],

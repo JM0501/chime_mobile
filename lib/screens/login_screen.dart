@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -16,6 +18,7 @@ class _LoginPageState extends State<LoginPage> {
   String? error;
   bool isLoading = false;
   final String baseUrl = 'https://chime-api.onrender.com';
+  //final String baseUrl = 'http://192.168.1.177:5000';
 
   Future<void> login() async {
     setState(() => isLoading = true);
@@ -34,6 +37,12 @@ class _LoginPageState extends State<LoginPage> {
       if (res.statusCode == 200 && data["token"] != null) {
         UserModel user = UserModel.fromJson(data["user"]);
 
+        // Store user info locally
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('userId', user.id);
+        await prefs.setString('username', user.username);
+        // optional: store token
+        await prefs.setString('token', data["token"]);
         // Pass the UserModel to ChatPage
         Navigator.pushReplacementNamed(
           context,
@@ -45,6 +54,7 @@ class _LoginPageState extends State<LoginPage> {
       }
     } catch (e) {
       setState(() => error = "An error occurred. Please try again.");
+      print("Error: $e");
     } finally {
       setState(() => isLoading = false);
     }
@@ -81,7 +91,7 @@ class _LoginPageState extends State<LoginPage> {
                     TextField(
                       controller: _emailController,
                       decoration: const InputDecoration(
-                        labelText: "Email",
+                        labelText: "Email or Username",
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -129,7 +139,9 @@ class _LoginPageState extends State<LoginPage> {
                             : const Text(
                                 "Login",
                                 style: TextStyle(
-                                    fontSize: 18, color: Colors.white),
+                                  fontSize: 18,
+                                  color: Colors.white,
+                                ),
                               ),
                       ),
                     ),
