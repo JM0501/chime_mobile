@@ -17,7 +17,6 @@ void main() async {
     user = UserModel(id: storedUserId, username: storedUsername, email: '');
     // Email optional here
   }
-
   runApp(MyApp(initialUser: user));
 }
 
