@@ -2,7 +2,7 @@ name: chime_mobile
 description: "A mobile chat app"
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.1+1
 
 environment:
   sdk: ^3.8.1
@@ -28,7 +28,7 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.13.1
 
-# Flutter icon configuration (must be at root level)
+# Flutter icon configuration
 flutter_icons:
   android: true
   ios: true

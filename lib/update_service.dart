@@ -10,7 +10,7 @@ class UpdateService {
   static const String latestReleaseApi =
       "https://api.github.com/repos/JM0501/chime_mobile/releases/latest";
 
-  /// ✅ Called from main.dart
+  // Called from main.dart
   static Future<bool> checkForUpdates() async {
     try {
       // Get current app version
@@ -35,7 +35,7 @@ class UpdateService {
     }
   }
 
-  /// ✅ Called from main.dart when update is available
+  //Called from main.dart when update is available
   static void promptUserToUpdate(BuildContext context) {
     if (_latestApkUrl == null || _latestVersion == null) return;
 
