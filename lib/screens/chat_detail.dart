@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:encrypt/encrypt.dart' as encrypt;
+import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 class EncryptionHelper {
   static final key = encrypt.Key.fromUtf8('1234567890123456'); // 16 chars
@@ -12,7 +13,7 @@ class EncryptionHelper {
   static String encryptText(String plainText) {
     final encrypter = encrypt.Encrypter(encrypt.AES(key));
     final encrypted = encrypter.encrypt(plainText, iv: iv);
-    return encrypted.base64; // store as base64
+    return encrypted.base64;
   }
 
   static String decryptText(String encryptedText) {
@@ -48,12 +49,48 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final String baseUrl = 'https://chime-api.onrender.com';
-  //final String baseUrl = 'http://192.168.1.177:5000';
+  late IO.Socket socket;
 
   @override
   void initState() {
     super.initState();
     fetchMessages();
+    initSocket();
+  }
+
+  // ---------- SOCKET.IO SETUP ----------
+  void initSocket() {
+    socket = IO.io(baseUrl, <String, dynamic>{
+      'transports': ['websocket'],
+      'autoConnect': false,
+    });
+
+    socket.connect();
+
+    socket.onConnect((_) {
+      print('Connected to socket server');
+      final roomId = [widget.currentUserId, widget.otherUserId]..sort();
+      socket.emit('joinRoom', roomId.join('_'));
+    });
+
+    socket.on('receiveMessage', (data) {
+      final msg = Map<String, dynamic>.from(data);
+      msg['content'] = safeDecrypt(msg['content']);
+
+      // Prevent duplicate message from appearing for sender
+      if (msg['senderId'] == widget.currentUserId) {
+        messages.removeWhere((m) =>
+            m['pending'] == true &&
+            m['content'] == msg['content']);
+      }
+
+      setState(() {
+        messages.add(msg);
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    });
+
+    socket.onDisconnect((_) => print('Socket disconnected'));
   }
 
   String safeDecrypt(String encryptedText) {
@@ -64,6 +101,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     }
   }
 
+  // ---------- FETCH OLD MESSAGES ----------
   Future<void> fetchMessages() async {
     setState(() => loading = true);
     try {
@@ -74,14 +112,12 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
       if (res.statusCode == 200) {
         final List data = json.decode(res.body);
-        print("Raw data $data");
         setState(() {
           messages = data.map((e) {
             final msg = Map<String, dynamic>.from(e);
             msg['content'] = safeDecrypt(msg['content']);
             return msg;
           }).toList();
-          print("Fetched ${messages.length} messages");
         });
 
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
@@ -95,54 +131,34 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     }
   }
 
+  // ---------- SEND MESSAGE ----------
   Future<void> sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
-    setState(() => sending = true);
-    try {
-      final url = Uri.parse('$baseUrl/api/messages');
-      final res = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'senderId': widget.currentUserId,
-          'receiverId': widget.otherUserId,
-          'content': EncryptionHelper.encryptText(text), // 🔒 encrypt
-        }),
-      );
+    final encrypted = EncryptionHelper.encryptText(text);
+    final payload = {
+      'senderId': widget.currentUserId,
+      'receiverId': widget.otherUserId,
+      'content': encrypted,
+    };
 
-      if (res.statusCode == 200 || res.statusCode == 201) {
-        final Map<String, dynamic> newMsg =
-            Map<String, dynamic>.from(json.decode(res.body));
+    // Emit via socket
+    socket.emit('sendMessage', payload);
 
-        //Force SenderId to current user for instant alignment
-        setState(() {
-          messages.add({
-            ...newMsg,
-            'senderId': widget.currentUserId,
-            'receiverId': widget.otherUserId,
-            'content': text,
-            'timestamp': DateTime.now().toIso8601String(),
-          });
-          _controller.clear();
-        });
+    // Add local message for instant display (pending)
+    setState(() {
+      messages.add({
+        'senderId': widget.currentUserId,
+        'receiverId': widget.otherUserId,
+        'content': text,
+        'timestamp': DateTime.now().toIso8601String(),
+        'pending': true, // mark as temporary
+      });
+      _controller.clear();
+    });
 
-        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-      } else {
-        final Map<String, dynamic> err = json.decode(res.body);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(err['error'] ?? 'Failed to send message')),
-        );
-      }
-    } catch (e) {
-      debugPrint('Send error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error sending message')),
-      );
-    } finally {
-      setState(() => sending = false);
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
   void _scrollToBottom() {
@@ -167,11 +183,13 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
   @override
   void dispose() {
+    socket.dispose();
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
+  // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -234,13 +252,30 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                                         color: isMe ? Colors.white : Colors.black87),
                                   ),
                                   const SizedBox(height: 6),
-                                  Text(
-                                    time,
-                                    style: TextStyle(
-                                        fontSize: 11,
-                                        color: isMe
-                                            ? Colors.white70
-                                            : Colors.black54),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        time,
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            color: isMe
+                                                ? Colors.white70
+                                                : Colors.black54),
+                                      ),
+                                      if (msg['pending'] == true)
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.only(left: 4.0),
+                                          child: Icon(
+                                            Icons.access_time,
+                                            size: 12,
+                                            color: isMe
+                                                ? Colors.white70
+                                                : Colors.black54,
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ],
                               ),
