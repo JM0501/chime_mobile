@@ -1,4 +1,4 @@
-// lib/screens/chat_page.dart
+// lib/screens/chat_screen.dart
 import 'package:chime_mobile/screens/chat_detail.dart';
 import 'package:chime_mobile/screens/select_user.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Encryption helper for message encryption/decryption
 class EncryptionHelper {
   static final key = encrypt.Key.fromUtf8('1234567890123456'); // 16 chars
   static final iv = encrypt.IV.fromUtf8('1234567890123456'); // 16 chars
@@ -15,14 +16,14 @@ class EncryptionHelper {
   static String encryptText(String plainText) {
     final encrypter = encrypt.Encrypter(encrypt.AES(key));
     final encrypted = encrypter.encrypt(plainText, iv: iv);
-    return encrypted.base64; // store as base64
+    return encrypted.base64;
   }
 
   static String decryptText(String encryptedText) {
     try {
       final encrypter = encrypt.Encrypter(encrypt.AES(key));
       return encrypter.decrypt64(encryptedText, iv: iv);
-    } catch (e) {
+    } catch (_) {
       return "[Decryption error]";
     }
   }
@@ -41,8 +42,10 @@ class _ChatPageState extends State<ChatPage> {
   List<Map<String, dynamic>> filteredChats = [];
   bool loading = true;
   final TextEditingController _searchController = TextEditingController();
-  final String baseUrl = 'https://chime-api.onrender.com';
-  // final String baseUrl = 'http://192.168.1.177:5000';
+
+  // 🔗 Base URL
+   //final String baseUrl = 'http://192.168.0.177:5000'; // Local
+  final String baseUrl = 'https://chime-api.onrender.com'; // Production
 
   @override
   void initState() {
@@ -65,19 +68,35 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  /// Fetch chats using token + tenantId
   Future<void> fetchChats() async {
-    //print("Navigating to ChatPage with userId: ${widget.currentUserId}");
     setState(() => loading = true);
+
     try {
-      final url = Uri.parse(
-        "$baseUrl/api/users/messages?userId=${widget.currentUserId}",
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      final userId = prefs.getString('userId');
+      //final tenantId = prefs.getString('tenantId') ?? 'default';
+
+      if (token == null || userId == null) {
+        print("User not logged in — token missing.");
+        _logout();
+        return;
+      }
+
+      final url = Uri.parse('$baseUrl/api/users/chats?userId=$userId');
+
+      final response = await http.get(
+        url,
+        headers: {
+          "Authorization": "Bearer $token", // JWT for auth
+          "Content-Type": "application/json",
+        },
       );
-      final response = await http.get(url);
 
       if (response.statusCode == 200) {
         final List data = json.decode(response.body);
 
-        // If user has no messages at all
         if (data.isEmpty) {
           setState(() {
             chats = [];
@@ -87,19 +106,19 @@ class _ChatPageState extends State<ChatPage> {
           return;
         }
 
-        // Decrypt and sort chats
-        List<Map<String, dynamic>> loadedChats = data.map((e) {
-          final chat = e as Map<String, dynamic>;
+        final loadedChats = data.map<Map<String, dynamic>>((chat) {
           chat['LastMessage'] = chat['LastMessage'] != null
               ? safeDecrypt(chat['LastMessage'])
               : '';
           return chat;
         }).toList();
 
-        // Sort by recency
+        // Sort newest first
         loadedChats.sort((a, b) {
-          final aTime = DateTime.tryParse(a['LastMessageTime'] ?? '') ?? DateTime(0);
-          final bTime = DateTime.tryParse(b['LastMessageTime'] ?? '') ?? DateTime(0);
+          final aTime =
+              DateTime.tryParse(a['LastMessageTime'] ?? '') ?? DateTime(0);
+          final bTime =
+              DateTime.tryParse(b['LastMessageTime'] ?? '') ?? DateTime(0);
           return bTime.compareTo(aTime);
         });
 
@@ -108,12 +127,17 @@ class _ChatPageState extends State<ChatPage> {
           filteredChats = List.from(chats);
           loading = false;
         });
+      } else if (response.statusCode == 401) {
+        // Token invalid or expired
+        print("🔒 Session expired — logging out.");
+        _logout();
       } else {
-        throw Exception("Failed to load chats");
+        print("Failed to load chats: ${response.statusCode}");
+        setState(() => loading = false);
       }
     } catch (e) {
-      setState(() => loading = false);
       print("Error fetching chats: $e");
+      setState(() => loading = false);
     }
   }
 
@@ -121,12 +145,11 @@ class _ChatPageState extends State<ChatPage> {
     final query = _searchController.text.toLowerCase();
     setState(() {
       filteredChats = chats
-          .where(
-            (c) => (c['Username'] ?? "Unknown")
-                .toString()
-                .toLowerCase()
-                .contains(query),
-          )
+          .where((chat) =>
+              (chat['Username'] ?? "Unknown")
+                  .toString()
+                  .toLowerCase()
+                  .contains(query))
           .toList();
     });
   }
@@ -142,10 +165,10 @@ class _ChatPageState extends State<ChatPage> {
 
   void _logout() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('userId');
-    await prefs.remove('username');
-    await prefs.remove('token'); // optional
-    Navigator.pushReplacementNamed(context, '/login');
+    await prefs.clear();
+    if (mounted) {
+      Navigator.pushReplacementNamed(context, '/login');
+    }
   }
 
   @override
@@ -186,6 +209,8 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
           ),
+
+          // 💬 Chat list
           Expanded(
             child: RefreshIndicator(
               onRefresh: fetchChats,
@@ -214,18 +239,18 @@ class _ChatPageState extends State<ChatPage> {
                             final chat = filteredChats[index];
                             return GestureDetector(
                               onTap: () async {
-                                // Wait for return and refresh chat list
                                 await Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => ChatDetailPage(
                                       currentUserId: widget.currentUserId,
                                       otherUserId: chat['Id'],
-                                      otherUsername: chat['Username'] ?? "Unknown",
+                                      otherUsername:
+                                          chat['Username'] ?? "Unknown",
                                     ),
                                   ),
                                 );
-                                fetchChats(); // refresh when returning
+                                fetchChats();
                               },
                               child: Container(
                                 margin: const EdgeInsets.symmetric(vertical: 6),
@@ -281,7 +306,8 @@ class _ChatPageState extends State<ChatPage> {
                                     const SizedBox(width: 8),
                                     Text(
                                       chat['LastMessageTime'] != null
-                                          ? formatTimestamp(chat['LastMessageTime'])
+                                          ? formatTimestamp(
+                                              chat['LastMessageTime'])
                                           : "",
                                       style: TextStyle(
                                         fontSize: 12,
@@ -307,7 +333,7 @@ class _ChatPageState extends State<ChatPage> {
                   SelectUserPage(currentUserId: widget.currentUserId),
             ),
           );
-          fetchChats(); // Refresh after creating a new chat
+          fetchChats();
         },
         backgroundColor: Colors.blueAccent,
         child: const Icon(Icons.chat),

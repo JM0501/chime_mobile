@@ -2,7 +2,6 @@ import 'package:chime_mobile/userModel.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginPage extends StatefulWidget {
@@ -17,44 +16,51 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   String? error;
   bool isLoading = false;
-  final String baseUrl = 'https://chime-api.onrender.com';
-  //final String baseUrl = 'http://192.168.1.177:5000';
+
+  // Use your local or production base URL
+   final String baseUrl = 'http://192.168.0.177:5000'; // Local
+  //final String baseUrl = 'https://chime-api.onrender.com'; // Production
 
   Future<void> login() async {
-    setState(() => isLoading = true);
+    setState(() {
+      isLoading = true;
+      error = null;
+    });
 
     try {
-      final res = await http.post(
-        Uri.parse("$baseUrl/api/login"),
+      final response = await http.post(
+        Uri.parse("$baseUrl/api/auth/login"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
-          "email": _emailController.text,
-          "password": _passwordController.text,
+          "email": _emailController.text.trim(),
+          "username": _emailController.text.trim(),
+          "password": _passwordController.text.trim(),
         }),
       );
 
-      final data = jsonDecode(res.body);
-      if (res.statusCode == 200 && data["token"] != null) {
-        UserModel user = UserModel.fromJson(data["user"]);
+      final data = jsonDecode(response.body);
 
-        // Store user info locally
+      if (response.statusCode == 200 && data["token"] != null) {
+        final user = UserModel.fromJson(data["user"]);
+
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('userId', user.id);
         await prefs.setString('username', user.username);
-        // optional: store token
+        await prefs.setString('email', user.email ?? '');
         await prefs.setString('token', data["token"]);
-        // Pass the UserModel to ChatPage
+
         Navigator.pushReplacementNamed(
           context,
           "/chat",
-          arguments: user, // <-- send the user object
+          arguments: user,
         );
       } else {
-        setState(() => error = data["error"] ?? "Login failed");
+        setState(() {
+          error = data["message"] /* ?? "Invalid credentials" */;
+        });
       }
     } catch (e) {
       setState(() => error = "An error occurred. Please try again.");
-      print("Error: $e");
     } finally {
       setState(() => isLoading = false);
     }
@@ -77,7 +83,6 @@ class _LoginPageState extends State<LoginPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Logo
                     Image.asset("assets/images/chime_logo.png", height: 120),
                     const SizedBox(height: 20),
                     const Text(

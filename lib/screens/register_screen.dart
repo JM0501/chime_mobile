@@ -16,29 +16,36 @@ class _RegisterPageState extends State<RegisterPage> {
   String? error;
   String? success;
   bool isLoading = false;
-  final String baseUrl = 'https://chime-api.onrender.com';
+
+  final String baseUrl = 'http://192.168.0.177:5000'; // Local
+  //final String baseUrl = 'https://chime-api.onrender.com'; // Production
 
   Future<void> register() async {
-    setState(() => isLoading = true);
+    setState(() {
+      isLoading = true;
+      error = null;
+      success = null;
+    });
 
     try {
       final res = await http.post(
-        Uri.parse("${baseUrl}/api/register"),
+        Uri.parse("$baseUrl/api/auth/register"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
-          "username": _usernameController.text,
-          "email": _emailController.text,
-          "password": _passwordController.text,
+          "username": _usernameController.text.trim(),
+          "email": _emailController.text.trim(),
+          "password": _passwordController.text.trim(),
         }),
       );
 
       final data = jsonDecode(res.body);
       if (res.statusCode == 201) {
-        setState(() => success = "Account created");
+        setState(() => success = "Account created successfully!");
         await Future.delayed(const Duration(seconds: 1));
         Navigator.pushReplacementNamed(context, "/login");
       } else {
-        setState(() => error = data["error"] ?? "Registration failed");
+        setState(() =>
+            error = data["message"] ?? data["error"] ?? "Registration failed");
       }
     } catch (e) {
       setState(() => error = "An error occurred. Please try again.");
@@ -57,19 +64,21 @@ class _RegisterPageState extends State<RegisterPage> {
             child: Card(
               elevation: 6,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Logo
                     Image.asset("assets/images/chime_logo.png", height: 120),
                     const SizedBox(height: 20),
                     const Text(
                       "Create Account ✨",
-                      style:
-                          TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     TextField(
@@ -101,7 +110,9 @@ class _RegisterPageState extends State<RegisterPage> {
                       Text(
                         error!,
                         style: const TextStyle(
-                            color: Colors.red, fontWeight: FontWeight.w500),
+                          color: Colors.red,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                     if (success != null) ...[
@@ -109,7 +120,9 @@ class _RegisterPageState extends State<RegisterPage> {
                       Text(
                         success!,
                         style: const TextStyle(
-                            color: Colors.green, fontWeight: FontWeight.w500),
+                          color: Colors.green,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                     const SizedBox(height: 20),
@@ -137,7 +150,9 @@ class _RegisterPageState extends State<RegisterPage> {
                             : const Text(
                                 "Register",
                                 style: TextStyle(
-                                    fontSize: 18, color: Colors.white),
+                                  fontSize: 18,
+                                  color: Colors.white,
+                                ),
                               ),
                       ),
                     ),
@@ -145,8 +160,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     TextButton(
                       onPressed: () =>
                           Navigator.pushReplacementNamed(context, "/login"),
-                      child:
-                          const Text("Already have an account? Login"),
+                      child: const Text("Already have an account? Login"),
                     ),
                   ],
                 ),
