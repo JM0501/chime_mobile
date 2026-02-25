@@ -14,12 +14,12 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+
   String? error;
   bool isLoading = false;
 
-  // Use your local or production base URL
-   final String baseUrl = 'http://192.168.0.177:5000'; // Local
-  //final String baseUrl = 'https://chime-api.onrender.com'; // Production
+  // Production API
+  final String baseUrl = 'https://chime-api.onrender.com';
 
   Future<void> login() async {
     setState(() {
@@ -32,13 +32,14 @@ class _LoginPageState extends State<LoginPage> {
         Uri.parse("$baseUrl/api/auth/login"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
+          // Backend accepts username OR email here
           "email": _emailController.text.trim(),
-          "username": _emailController.text.trim(),
           "password": _passwordController.text.trim(),
         }),
       );
 
-      final data = jsonDecode(response.body);
+      final Map<String, dynamic> data =
+          response.body.isNotEmpty ? jsonDecode(response.body) : {};
 
       if (response.statusCode == 200 && data["token"] != null) {
         final user = UserModel.fromJson(data["user"]);
@@ -49,6 +50,8 @@ class _LoginPageState extends State<LoginPage> {
         await prefs.setString('email', user.email ?? '');
         await prefs.setString('token', data["token"]);
 
+        if (!mounted) return;
+
         Navigator.pushReplacementNamed(
           context,
           "/chat",
@@ -56,13 +59,17 @@ class _LoginPageState extends State<LoginPage> {
         );
       } else {
         setState(() {
-          error = data["message"] /* ?? "Invalid credentials" */;
+          error = data["message"] ?? "Invalid credentials";
         });
       }
     } catch (e) {
-      setState(() => error = "An error occurred. Please try again.");
+      setState(() {
+        error = "Unable to connect to server.";
+      });
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 
