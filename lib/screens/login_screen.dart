@@ -19,7 +19,8 @@ class _LoginPageState extends State<LoginPage> {
   bool isLoading = false;
 
   // Production API
-  final String baseUrl = 'https://chime-api.onrender.com';
+  //final String baseUrl = 'https://chime-api.onrender.com';
+  final String baseUrl = 'http://192.168.22.1:5000';
 
   Future<void> login() async {
     setState(() {

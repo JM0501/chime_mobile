@@ -1,6 +1,7 @@
 import 'package:chime_mobile/screens/chat_detail.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../userModel.dart';
 
@@ -17,8 +18,8 @@ class _SelectUserPageState extends State<SelectUserPage> {
   List<UserModel> filteredUsers = [];
   bool loading = true;
   final TextEditingController _searchController = TextEditingController();
-  final String baseUrl = 'https://chime-api.onrender.com';
-  //final String baseUrl = 'http://192.168.1.177:5000';
+  //final String baseUrl = 'https://chime-api.onrender.com';
+  final String baseUrl = 'http://192.168.22.1:5000';
 
   @override
   void initState() {
@@ -34,29 +35,46 @@ class _SelectUserPageState extends State<SelectUserPage> {
   }
 
   Future<void> fetchUsers() async {
-    setState(() => loading = true);
-    try {
-      final url = Uri.parse('$baseUrl/api/users');
-      final res = await http.get(url);
-      if (res.statusCode == 200) {
-        final List data = json.decode(res.body);
-        setState(() {
-          users = data
-              .map((e) => UserModel.fromJson(e))
-              .where((u) => u.id != widget.currentUserId) // String comparison
-              .toList();
-          filteredUsers = List.from(users);
-          loading = false;
-        });
-        print("Fetched ${users.length} users");
-      } else {
-        throw Exception("Failed to load users");
-      }
-    } catch (e) {
-      setState(() => loading = false);
-      print("Error fetching users: $e");
+  setState(() => loading = true);
+
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+
+    final url = Uri.parse('$baseUrl/api/users');
+
+    final res = await http.get(
+      url,
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer $token",
+      },
+    );
+
+    if (res.statusCode == 200) {
+      final List data = json.decode(res.body);
+
+      setState(() {
+        users = data
+            .map((e) => UserModel.fromJson(e))
+            .where((u) => u.id != widget.currentUserId)
+            .toList();
+
+        filteredUsers = List.from(users);
+        loading = false;
+      });
+
+      print("Fetched ${users.length} users");
+    } else {
+      print("STATUS: ${res.statusCode}");
+      print("BODY: ${res.body}");
+      throw Exception("Failed to load users");
     }
+  } catch (e) {
+    setState(() => loading = false);
+    print("Error fetching users: $e");
   }
+}
 
   void _filterUsers() {
     final query = _searchController.text.toLowerCase();
