@@ -17,8 +17,8 @@ class _RegisterPageState extends State<RegisterPage> {
   String? success;
   bool isLoading = false;
 
-  //final String baseUrl = 'http://192.168.0.177:5000'; // Local
-  final String baseUrl = 'https://chime-api.onrender.com'; // Production
+  final String baseUrl = 'http://192.168.22.1:5000'; // Local
+  //final String baseUrl = 'https://chime-api.onrender.com'; // Production
 
   Future<void> register() async {
     setState(() {

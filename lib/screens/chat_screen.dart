@@ -43,9 +43,9 @@ class _ChatPageState extends State<ChatPage> {
   bool loading = true;
   final TextEditingController _searchController = TextEditingController();
 
-  // 🔗 Base URL
-   //final String baseUrl = 'http://192.168.0.177:5000'; // Local
-  final String baseUrl = 'https://chime-api.onrender.com'; // Production
+  // Base URL
+   final String baseUrl = 'http://192.168.22.1:5000'; // Local
+  //final String baseUrl = 'https://chime-api.onrender.com'; // Production
 
   @override
   void initState() {
@@ -76,7 +76,6 @@ class _ChatPageState extends State<ChatPage> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
       final userId = prefs.getString('userId');
-      //final tenantId = prefs.getString('tenantId') ?? 'default';
 
       if (token == null || userId == null) {
         print("User not logged in — token missing.");
@@ -84,7 +83,7 @@ class _ChatPageState extends State<ChatPage> {
         return;
       }
 
-      final url = Uri.parse('$baseUrl/api/users/chats?userId=$userId');
+      final url = Uri.parse('$baseUrl/api/users/chats');
 
       final response = await http.get(
         url,
@@ -96,7 +95,7 @@ class _ChatPageState extends State<ChatPage> {
 
       if (response.statusCode == 200) {
         final List data = json.decode(response.body);
-
+        print("Fetched ${data.length} chats for user $userId");
         if (data.isEmpty) {
           setState(() {
             chats = [];
