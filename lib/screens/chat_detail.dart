@@ -1,14 +1,16 @@
 // lib/screens/chat_detail_page.dart
+import 'package:chime_mobile/config.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class EncryptionHelper {
-  static final key = encrypt.Key.fromUtf8('1234567890123456'); // 16 chars
-  static final iv = encrypt.IV.fromUtf8('1234567890123456');   // 16 chars
+  static final key = encrypt.Key.fromUtf8('1234567890123456');
+  static final iv = encrypt.IV.fromUtf8('1234567890123456');
 
   static String encryptText(String plainText) {
     final encrypter = encrypt.Encrypter(encrypt.AES(key));
@@ -20,7 +22,7 @@ class EncryptionHelper {
     try {
       final encrypter = encrypt.Encrypter(encrypt.AES(key));
       return encrypter.decrypt64(encryptedText, iv: iv);
-    } catch (e) {
+    } catch (_) {
       return "[Decryption error]";
     }
   }
@@ -45,130 +47,140 @@ class ChatDetailPage extends StatefulWidget {
 class _ChatDetailPageState extends State<ChatDetailPage> {
   List<Map<String, dynamic>> messages = [];
   bool loading = true;
-  bool sending = false;
+
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final String baseUrl = 'https://chime-api.onrender.com';
+
+  final baseUrl = AppConfig.baseUrl;
   late IO.Socket socket;
 
   @override
   void initState() {
     super.initState();
-    fetchMessages();
     initSocket();
+    fetchMessages(); // 🔥 IMPORTANT
   }
 
-  // ---------- SOCKET.IO SETUP ----------
-  void initSocket() {
-    socket = IO.io(baseUrl, <String, dynamic>{
-      'transports': ['websocket'],
-      'autoConnect': false,
-    });
-
-    socket.connect();
-
-    socket.onConnect((_) {
-      print('Connected to socket server');
-      final roomId = [widget.currentUserId, widget.otherUserId]..sort();
-      socket.emit('joinRoom', roomId.join('_'));
-    });
-
-    socket.on('receiveMessage', (data) {
-      final msg = Map<String, dynamic>.from(data);
-      msg['content'] = safeDecrypt(msg['content']);
-
-      // Prevent duplicate message from appearing for sender
-      if (msg['senderId'] == widget.currentUserId) {
-        messages.removeWhere((m) =>
-            m['pending'] == true &&
-            m['content'] == msg['content']);
-      }
-
-      setState(() {
-        messages.add(msg);
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-    });
-
-    socket.onDisconnect((_) => print('Socket disconnected'));
-  }
-
-  String safeDecrypt(String encryptedText) {
-    try {
-      return EncryptionHelper.decryptText(encryptedText);
-    } catch (_) {
-      return "[Decryption error]";
-    }
-  }
-
-  // ---------- FETCH OLD MESSAGES ----------
+  // ================= FETCH OLD MESSAGES =================
   Future<void> fetchMessages() async {
-    setState(() => loading = true);
     try {
-      final url = Uri.parse(
-        '$baseUrl/api/messages?user1=${widget.currentUserId}&user2=${widget.otherUserId}',
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      final res = await http.get(
+        Uri.parse('$baseUrl/api/messages/${widget.otherUserId}'),
+        headers: {
+          "Authorization": "Bearer $token",
+          "Content-Type": "application/json",
+        },
       );
-      final res = await http.get(url);
 
       if (res.statusCode == 200) {
         final List data = json.decode(res.body);
+
         setState(() {
           messages = data.map((e) {
             final msg = Map<String, dynamic>.from(e);
-            msg['content'] = safeDecrypt(msg['content']);
+            msg['timestamp'] = msg['createdAt'];
+            msg['content'] =
+                EncryptionHelper.decryptText(msg['content']);
             return msg;
           }).toList();
         });
 
-        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-      } else {
-        debugPrint('Failed to load messages: ${res.statusCode}');
+        _scrollToBottom();
       }
     } catch (e) {
-      debugPrint('Error fetching messages: $e');
+      debugPrint("Fetch error: $e");
     } finally {
       setState(() => loading = false);
     }
   }
 
-  // ---------- SEND MESSAGE ----------
-  Future<void> sendMessage() async {
+  // ================= SOCKET =================
+  void initSocket() async {
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('token');
+
+  socket = IO.io(baseUrl, {
+    'transports': ['websocket'],
+    'autoConnect': false,
+    'auth': {
+      'token': token,
+    }
+  });
+
+  socket.connect();
+
+  socket.onConnect((_) {
+    debugPrint("✅ Socket connected");
+
+    final roomId = [widget.currentUserId, widget.otherUserId]..sort();
+    socket.emit('joinRoom', roomId.join('_'));
+  });
+
+  socket.on('receiveMessage', (data) {
+    final msg = Map<String, dynamic>.from(data);
+
+    msg['timestamp'] = msg['createdAt'] ?? msg['timestamp'];
+    msg['content'] = EncryptionHelper.decryptText(msg['content']);
+
+    // ✅ FIX: remove using tempId ONLY
+    if (msg['tempId'] != null) {
+      messages.removeWhere((m) => m['tempId'] == msg['tempId']);
+    }
+
+    setState(() {
+      messages.add(msg);
+    });
+
+    _scrollToBottom();
+  });
+}
+
+  // ================= SEND =================
+  void sendMessage() {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
     final encrypted = EncryptionHelper.encryptText(text);
-    final payload = {
+    final tempId = DateTime.now().millisecondsSinceEpoch.toString();
+
+    final tempMsg = {
+      'tempId': tempId,
       'senderId': widget.currentUserId,
       'receiverId': widget.otherUserId,
-      'content': encrypted,
+      'content': text,
+      'timestamp': DateTime.now().toIso8601String(),
+      'pending': true,
     };
 
-    // Emit via socket
-    socket.emit('sendMessage', payload);
-
-    // Add local message for instant display (pending)
     setState(() {
-      messages.add({
-        'senderId': widget.currentUserId,
-        'receiverId': widget.otherUserId,
-        'content': text,
-        'timestamp': DateTime.now().toIso8601String(),
-        'pending': true, // mark as temporary
-      });
+      messages.add(tempMsg);
       _controller.clear();
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    _scrollToBottom();
+
+    socket.emit('sendMessage', {
+      'tempId': tempId,
+      'senderId': widget.currentUserId,
+      'receiverId': widget.otherUserId,
+      'content': encrypted,
+    });
   }
 
+  // ================= SCROLL =================
   void _scrollToBottom() {
     if (!_scrollController.hasClients) return;
-    final position = _scrollController.position;
-    _scrollController.animateTo(
-      position.maxScrollExtent,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
-    );
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   String formatTime(dynamic timestamp) {
@@ -189,7 +201,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     super.dispose();
   }
 
-  // ---------- UI ----------
+  // ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -197,7 +209,6 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         title: Text(widget.otherUsername),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
-        elevation: 1,
       ),
       body: Column(
         children: [
@@ -213,69 +224,47 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                       )
                     : ListView.builder(
                         controller: _scrollController,
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 12, horizontal: 12),
                         itemCount: messages.length,
                         itemBuilder: (context, index) {
                           final msg = messages[index];
-                          final isMe = msg['senderId'] == widget.currentUserId;
-
-                          final content = msg['content'] ?? '';
-                          final time = formatTime(msg['timestamp'] ?? '');
+                          final isMe =
+                              msg['senderId'] == widget.currentUserId;
 
                           return Align(
-                            alignment:
-                                isMe ? Alignment.centerRight : Alignment.centerLeft,
+                            alignment: isMe
+                                ? Alignment.centerRight
+                                : Alignment.centerLeft,
                             child: Container(
-                              constraints: BoxConstraints(
-                                  maxWidth:
-                                      MediaQuery.of(context).size.width * 0.75),
-                              margin: const EdgeInsets.symmetric(vertical: 6),
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: 10, horizontal: 12),
+                              margin: const EdgeInsets.symmetric(
+                                  vertical: 6, horizontal: 12),
+                              padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: isMe ? Colors.indigo : Colors.grey[200],
-                                borderRadius: BorderRadius.only(
-                                  topLeft: const Radius.circular(12),
-                                  topRight: const Radius.circular(12),
-                                  bottomLeft: Radius.circular(isMe ? 12 : 0),
-                                  bottomRight: Radius.circular(isMe ? 0 : 12),
-                                ),
+                                color: isMe
+                                    ? Colors.indigo
+                                    : Colors.grey[200],
+                                borderRadius: BorderRadius.circular(12),
                               ),
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.end,
                                 children: [
                                   Text(
-                                    content,
+                                    msg['content'],
                                     style: TextStyle(
-                                        color: isMe ? Colors.white : Colors.black87),
+                                      color: isMe
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
                                   ),
-                                  const SizedBox(height: 6),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        time,
-                                        style: TextStyle(
-                                            fontSize: 11,
-                                            color: isMe
-                                                ? Colors.white70
-                                                : Colors.black54),
-                                      ),
-                                      if (msg['pending'] == true)
-                                        Padding(
-                                          padding:
-                                              const EdgeInsets.only(left: 4.0),
-                                          child: Icon(
-                                            Icons.access_time,
-                                            size: 12,
-                                            color: isMe
-                                                ? Colors.white70
-                                                : Colors.black54,
-                                          ),
-                                        ),
-                                    ],
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    formatTime(msg['timestamp']),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isMe
+                                          ? Colors.white70
+                                          : Colors.black54,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -284,68 +273,25 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                         },
                       ),
           ),
+
+          // INPUT
           SafeArea(
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
-                        blurRadius: 6)
-                  ]),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: InputDecoration(
-                        hintText: "Type a message...",
-                        filled: true,
-                        fillColor: Colors.grey[100],
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
-                      ),
-                      onSubmitted: (_) => sendMessage(),
-                    ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    decoration:
+                        const InputDecoration(hintText: "Message..."),
                   ),
-                  const SizedBox(width: 8),
-                  sending
-                      ? Container(
-                          width: 44,
-                          height: 44,
-                          padding: const EdgeInsets.all(10),
-                          child:
-                              const CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : GestureDetector(
-                          onTap: sendMessage,
-                          child: Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: Colors.indigo,
-                              borderRadius: BorderRadius.circular(22),
-                              boxShadow: [
-                                BoxShadow(
-                                    color: Colors.black.withOpacity(0.08),
-                                    blurRadius: 4)
-                              ],
-                            ),
-                            child: const Icon(Icons.send,
-                                color: Colors.white, size: 20),
-                          ),
-                        ),
-                ],
-              ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.send),
+                  onPressed: sendMessage,
+                )
+              ],
             ),
-          ),
+          )
         ],
       ),
     );

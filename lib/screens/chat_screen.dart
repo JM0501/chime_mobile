@@ -1,4 +1,5 @@
 // lib/screens/chat_screen.dart
+import 'package:chime_mobile/config.dart';
 import 'package:chime_mobile/screens/chat_detail.dart';
 import 'package:chime_mobile/screens/select_user.dart';
 import 'package:flutter/material.dart';
@@ -43,9 +44,7 @@ class _ChatPageState extends State<ChatPage> {
   bool loading = true;
   final TextEditingController _searchController = TextEditingController();
 
-  // Base URL
-   final String baseUrl = 'http://192.168.22.1:5000'; // Local
-  //final String baseUrl = 'https://chime-api.onrender.com'; // Production
+   final String baseUrl = AppConfig.baseUrl; // Use baseUrl from config
 
   @override
   void initState() {
@@ -68,77 +67,74 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  /// Fetch chats using token + tenantId
-  Future<void> fetchChats() async {
-    setState(() => loading = true);
+  /// Fetch chats using JWT (fixed backend alignment)
+Future<void> fetchChats() async {
+  setState(() => loading = true);
 
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
-      final userId = prefs.getString('userId');
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
 
-      if (token == null || userId == null) {
-        print("User not logged in — token missing.");
-        _logout();
-        return;
-      }
+    if (token == null) {
+      print("User not logged in — token missing.");
+      _logout();
+      return;
+    }
 
-      final url = Uri.parse('$baseUrl/api/users/chats');
+    final url = Uri.parse('$baseUrl/api/users/chats');
 
-      final response = await http.get(
-        url,
-        headers: {
-          "Authorization": "Bearer $token", // JWT for auth
-          "Content-Type": "application/json",
-        },
-      );
+    final response = await http.get(
+      url,
+      headers: {
+        "Authorization": "Bearer $token",
+        "Content-Type": "application/json",
+      },
+    );
 
-      if (response.statusCode == 200) {
-        final List data = json.decode(response.body);
-        print("Fetched ${data.length} chats for user $userId");
-        if (data.isEmpty) {
-          setState(() {
-            chats = [];
-            filteredChats = [];
-            loading = false;
-          });
-          return;
-        }
+    if (response.statusCode == 200) {
+      final List data = json.decode(response.body);
 
-        final loadedChats = data.map<Map<String, dynamic>>((chat) {
-          chat['LastMessage'] = chat['LastMessage'] != null
-              ? safeDecrypt(chat['LastMessage'])
-              : '';
-          return chat;
-        }).toList();
+      print("Fetched ${data.length} chats");
 
-        // Sort newest first
-        loadedChats.sort((a, b) {
-          final aTime =
-              DateTime.tryParse(a['LastMessageTime'] ?? '') ?? DateTime(0);
-          final bTime =
-              DateTime.tryParse(b['LastMessageTime'] ?? '') ?? DateTime(0);
-          return bTime.compareTo(aTime);
-        });
+      final loadedChats = data.map<Map<String, dynamic>>((chat) {
+        chat['LastMessage'] = chat['LastMessage'] != null
+            ? safeDecrypt(chat['LastMessage'])
+            : '';
+        return chat;
+      }).toList();
 
-        setState(() {
-          chats = loadedChats;
-          filteredChats = List.from(chats);
-          loading = false;
-        });
-      } else if (response.statusCode == 401) {
-        // Token invalid or expired
-        print("🔒 Session expired — logging out.");
-        _logout();
-      } else {
-        print("Failed to load chats: ${response.statusCode}");
-        setState(() => loading = false);
-      }
-    } catch (e) {
-      print("Error fetching chats: $e");
+      loadedChats.sort((a, b) {
+        final aTime =
+            DateTime.tryParse(a['LastMessageTime'] ?? '') ?? DateTime(0);
+        final bTime =
+            DateTime.tryParse(b['LastMessageTime'] ?? '') ?? DateTime(0);
+        return bTime.compareTo(aTime);
+      });
+
+      setState(() {
+        chats = loadedChats;
+        filteredChats = List.from(chats);
+        loading = false;
+      });
+    }
+
+    // IMPORTANT: handle auth errors properly
+    else if (response.statusCode == 401 || response.statusCode == 403) {
+      print("🔒 Auth error — logging out");
+      _logout();
+    }
+
+    else {
+      print("Failed to load chats: ${response.statusCode}");
+      print("Body: ${response.body}");
       setState(() => loading = false);
     }
+
+  } catch (e) {
+    print("Error fetching chats: $e");
+    setState(() => loading = false);
   }
+}
 
   void _filterChats() {
     final query = _searchController.text.toLowerCase();

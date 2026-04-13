@@ -1,3 +1,4 @@
+import 'package:chime_mobile/config.dart';
 import 'package:chime_mobile/screens/chat_detail.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -6,7 +7,7 @@ import 'dart:convert';
 import '../userModel.dart';
 
 class SelectUserPage extends StatefulWidget {
-  final String currentUserId; // ✅ now a String
+  final String currentUserId;
   const SelectUserPage({super.key, required this.currentUserId});
 
   @override
@@ -18,8 +19,8 @@ class _SelectUserPageState extends State<SelectUserPage> {
   List<UserModel> filteredUsers = [];
   bool loading = true;
   final TextEditingController _searchController = TextEditingController();
-  //final String baseUrl = 'https://chime-api.onrender.com';
-  final String baseUrl = 'http://192.168.22.1:5000';
+
+   final String baseUrl = AppConfig.baseUrl; // Use baseUrl from config
 
   @override
   void initState() {

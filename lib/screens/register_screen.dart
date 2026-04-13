@@ -1,3 +1,4 @@
+import 'package:chime_mobile/config.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -17,9 +18,6 @@ class _RegisterPageState extends State<RegisterPage> {
   String? success;
   bool isLoading = false;
 
-  final String baseUrl = 'http://192.168.22.1:5000'; // Local
-  //final String baseUrl = 'https://chime-api.onrender.com'; // Production
-
   Future<void> register() async {
     setState(() {
       isLoading = true;
@@ -29,7 +27,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
     try {
       final res = await http.post(
-        Uri.parse("$baseUrl/api/auth/register"),
+        Uri.parse("${AppConfig.baseUrl}/api/auth/register"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "username": _usernameController.text.trim(),

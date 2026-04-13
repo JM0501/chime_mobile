@@ -1,3 +1,4 @@
+import 'package:chime_mobile/config.dart';
 import 'package:chime_mobile/userModel.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -18,10 +19,6 @@ class _LoginPageState extends State<LoginPage> {
   String? error;
   bool isLoading = false;
 
-  // Production API
-  //final String baseUrl = 'https://chime-api.onrender.com';
-  final String baseUrl = 'http://192.168.22.1:5000';
-
   Future<void> login() async {
     setState(() {
       isLoading = true;
@@ -30,7 +27,7 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       final response = await http.post(
-        Uri.parse("$baseUrl/api/auth/login"),
+        Uri.parse("${AppConfig.baseUrl}/api/auth/login"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           // Backend accepts username OR email here
